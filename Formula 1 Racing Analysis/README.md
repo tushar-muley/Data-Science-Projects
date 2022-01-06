@@ -1,7 +1,7 @@
 ## Author: Tushar Muley
 
 ### **Case Study on Formula 1 Racing Analysis**
-<img src="tushar-muley.github.io/images/f1_racing.png?raw=true"/>
+<img src="f1_racing.png?raw=true"/>
 
 A case study on exploratory data analysis (EDA) and coding of bring together different types of data sets 
 to perform the analysis of what it takes to win in Formula 1 racing. Includes merging of driver information data, racing tracks information, with 
