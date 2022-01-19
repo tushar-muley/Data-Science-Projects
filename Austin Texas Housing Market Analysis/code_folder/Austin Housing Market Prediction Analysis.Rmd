@@ -1,0 +1,198 @@
+---
+title: "Austin Housing Market Prediction Analysis"
+Description: "High Level Description: The below project was performed between Project R in RStudio and Python. Both notebooks are available in this repository. This project in volved Exploratory Data Analysis performed and some data cleansing in RStudio. Visual analysis and predictive modeling were performed in Python. The goal of the project was to predict home prices for the Austin, Texas market with an above 60 percent accuracy."
+
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#Call all libraries
+
+```{r}
+
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(readr)
+library(tidyr)
+```
+#Load data
+
+```{r}
+austin_housing <- read.csv('C:austinHousingData.csv')
+```
+#View data
+```{r}
+#Preview the dataframe
+
+head(austin_housing)
+```
+
+#Install pastecs package
+```{r}
+install.packages("pastecs",repos = "http://cran.us.r-project.org")
+library(pastecs,)
+```
+
+#View statistics
+
+```{r}
+#Summary Statistics for 2 variables
+stat.desc(austin_housing)
+```
+
+#Move data into a dataframe
+
+```{r}
+
+df<-data.frame(austin_housing)
+```
+
+#Null check
+```{r}
+is.null(df) 
+```
+#Not null values
+
+
+
+#List of columns
+
+```{r}
+colnames(df) 
+```
+
+
+
+#Count values to figure out if information is of value in keeping or deleting
+
+```{r}
+table(df$numOfAccessibilityFeatures)
+```
+
+#Count of numOfParkingFeatures
+```{r}
+table(df$numOfParkingFeatures)
+```
+
+#Count of numOfPatioAndPorchFeatures
+```{r}
+table(df$numOfPatioAndPorchFeatures)
+```
+
+#Count of numOfSecurityFeatures
+```{r}
+table(df$numOfSecurityFeatures)
+```
+
+#Count of numOfWaterfrontFeatures
+```{r}
+table(df$numOfWaterfrontFeatures)
+```
+
+#Count of numOfWindowFeatures
+```{r}
+table(df$numOfWindowFeatures)
+```
+
+#Count of numOfCommunityFeatures
+```{r}
+table(df$numOfCommunityFeatures)
+```
+
+#Count of hasSpa
+```{r}
+table(df$hasSpa)
+```
+
+#Count of hasView
+```{r}
+table(df$hasView)
+```
+
+#Summary of dataset
+```{r}
+summary(df)
+```
+
+
+
+# histogram of data latestprice
+```{r}
+df %>% ggplot(aes(x = latestPrice)) + 
+  geom_histogram(bins = 100, fill = "blue") + 
+  scale_y_log10()
+```
+
+# histogram of livingAreaSqFt
+
+```{r}
+df %>% ggplot(aes(x = livingAreaSqFt)) + 
+  geom_histogram(bins = 100, fill = "blue") + 
+  scale_y_log10()
+```
+
+# histogram of yearBuilt
+
+```{r}
+df %>% ggplot(aes(x = yearBuilt)) + 
+  geom_histogram(bins = 50, fill = "blue") + 
+  scale_y_log10()
+```
+
+
+#Convert True and False data types
+
+```{r}
+df$hasAssociation <- as.integer(df$hasAssociation)
+
+df$hasCooling <- as.integer(df$hasCooling)
+
+df$hasHeating <- as.integer(df$hasHeating)
+
+df$hasAssociation <- as.integer(df$hasAssociation)
+
+```
+#Drop columns that are not needed
+```{r}
+df2 <- subset(df, select=-c(zpid, description,propertyTaxRate,numOfAccessibilityFeatures,numOfParkingFeatures,homeImage,hasView,hasSpa,city, streetAddress,latest_saledate,latestPriceSource))
+```
+
+#View columns
+```{r}
+colnames(df2) 
+```
+
+#Head to check columns
+```{r}
+head(df2)
+```
+
+# count of homeType
+```{r}
+table(df2$homeType)
+```
+
+# dim of df2
+```{r}
+dim(df2)
+```
+
+
+
+
+#Write the data down to File for Python analysis
+
+```{r}
+write.csv(df2,'C:/austinHousingDataProcessed.csv')
+```
+
+
+
+
+
+
+
+
+
