@@ -1,7 +1,7 @@
 ## Author: Tushar Muley
 
 ### **Austin Housing Market Prediction Analysis**
-<img src="images/housing.png?raw=true"/>
+<img src="housing.png?raw=true"/>
 
 The Austin, Texas Metro area has seen an increase in population of 34% compared to the 2010 Census confirmed by the most recent Census data released in May of 2021. These new settlers are looking for affordable housing as they move into the newest tech hub outside of the traditional hubs like Silicon Valley and Seattle. Our team was tasked with building a machine learning model that will take our housing data and train against that data to make predictions on home prices in the Austin area. We were given a data set with over 15,000 rows all containing various features and information that Zillow contains for analysis.
 
