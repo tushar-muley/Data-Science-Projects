@@ -1,0 +1,728 @@
+---
+title: "Analysis Determining Factors in Car Accidents "
+author: "Tushar Muley"
+date: ""
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+#Call all libraries
+library(ggplot2)
+library(stringr)
+library(dplyr)
+library(Rcmdr)
+library(readr)
+library(tidyr)
+
+```
+
+#Data Cleaning
+
+#Data filter by date Jan 2015 - Dec 2019
+
+US_Accidents_5yrs<-US_Accidents_Dec19 %>% filter(US_Accidents_Dec19$Start_Time>='2015-01-01')
+glimpse(US_Accidents_5yrs)
+
+#Update the 'Visibility(mi)' to Visibility_miles
+names(US_Accidents_5yrs)[names(US_Accidents_5yrs) == "Visibility(mi)"] <- "Visibility_Miles" 
+
+#Count of cities and states in preparing for top5
+ddply(US_Accidents_Dec19,~State,summarise,number_of_distinct_orders=length(unique(City)))
+
+stateCityCnt<-US_Accidents_5yrs %>% dplyr:: group_by(State, City) %>% tally()
+stateCityCnt
+
+#Build individual files to load into Final
+US_Accidents_Dataset_FinalTX<- dplyr::filter(US_Accidents_5yrs, State== "TX" & City== "Houston") 
+US_Accidents_Dataset_FinalNC <- dplyr::filter(US_Accidents_5yrs, State== "NC" & City== "Charlotte")
+US_Accidents_Dataset_FinalCA <- dplyr::filter(US_Accidents_5yrs, State== "CA" & City== "Los Angeles")
+US_Accidents_Dataset_FinalGA <- dplyr::filter(US_Accidents_5yrs, State== "GA" & City== "Atlanta")
+US_Accidents_Dataset_FinalFL <- dplyr::filter(US_Accidents_5yrs, State== "FL" & City== "Miami")
+
+US_Accidents_Dataset_Final<- rbind(US_Accidents_Dataset_FinalNC, US_Accidents_Dataset_FinalTX,
+                                   US_Accidents_Dataset_FinalCA, US_Accidents_Dataset_FinalGA,
+                                   US_Accidents_Dataset_FinalFL)                                    
+
+#Check
+nrow(US_Accidents_Dataset_Final)
+
+glimpse (US_Accidents_Dataset_Final)
+
+#Count of Severity of accidents
+ggplot(US_Accidents_Dataset_Final, aes(x=Severity)) + geom_histogram(binwidth = 1)
+
+#Histogram showing Severity and density
+ggplot(US_Accidents_Dataset_Final, aes(x=Severity)) + geom_histogram(aes(y = ..density..), binwidth = 1) + 
+  stat_function(fun = dnorm, col = 'red', args = list(mean=mean(US_Accidents_Dataset_Final$Severity),
+                                                      sd = sd(US_Accidents_Dataset_Final$Severity)))
+
+
+#Additional clean up get hour for start of accident
+US_Accidents_Dataset_Final$Start_Hour <- lubridate::hour(US_Accidents_Dataset_Final$Start_Time)
+```
+#Question 1: Does time of day contribute to accident rates?
+#Histogram of hours of when Accidents Happened with normal curve
+
+Does the time of day contribute to the rate of accident? In order to answer this question, I took Start Time in my data, which was represented as date time stamp. I split the date and time portions apart. After that I used the lubridate function to split the hour into a different column called ‘Start_Hour’. From here I created a histogram using ggplot with a normal curve to show which hours tend to have the most accidents.
+
+The plot is bimodal and has negative kurtosis. The data is spread out and not pointy. The histogram also shows peak between 8AM and 9AM time slot. The two almost equal peaks is between 4PM and 5PM. To see a clearer picture of which cities have the highest rates of accidents I plotted a line chart below in Output 2. As you can see peaks are similar for all cities, but for some reason Houston and Charlotte have much higher accident rate compared to cities with higher populations like Atlanta and Los Angeles.
+
+I believe more investigation as to why Houston and Charlotte have higher rate of accidents during peak hours compared to cities with higher populations. There might be data limitation or other issues that would require further investigation. The data does show the hours of 8AM to 9AM and 4PM to 5PM are the peaks for the most amount of accidents. By adding in sun rise and sun set into analysis there might be a direct correlation. Since those type of occurrence has proven to cause of higher accidents. 
+
+```{r}
+#Plot of accident rates and start hours by city
+ggplot(US_Accidents_Dataset_Final, aes(x=Start_Hour)) + geom_histogram(aes(y=..density..),binwidth = 1) + stat_function(fun=dnorm,col='red',args=list(mean=mean(US_Accidents_Dataset_Final$Start_Hour),
+                                              sd=sd(US_Accidents_Dataset_Final$Start_Hour))) +
+  labs(title='Start Hours of Accidents in the Top 5 Cities with Normal Curve',x='Start Hour',
+       y='Density')
+       
+#Check on data
+glimpse(US_Accidents_Dataset_Final) 
+
+#Smaller data set to review city by accident rate
+summ_start_hr <- dplyr::count(US_Accidents_Dataset_Final,City,Start_Hour)
+
+#Check
+head(summ_start_hr)
+
+#Line plot to show which cities have the worse accident rate
+
+ggplot(summ_start_hr, aes(x=Start_Hour, y=n, color=City)) + geom_line() +
+labs(title='Start Hours of Accidents in each City',x='Start Hour',y='Count of Accidents')
+
+```
+#Question 2:Where do majority of accidents occur? 
+This leads me to my next question of where do majority of these accidents occur? Do these accidents happen on surface street or freeway or interstates? The data has detail street names and interstate names. I decided it would be best to bucket or bin this data into two types of road ways, highways and streets. I also used terms like ‘Fwy’, which describe Freeway a term used more on the West Coast. The term ‘Expy’ or Express way is used more on the East Coast. By narrowing down these different terms to two possible terms. This would help narrow down other factors that might lead to higher rates of accidents. I used the mutate function and str_detect (found in the stringr library) to bucket the data as highway which was anything with Fwy, Expy, Highway, I- or US- in the column called Street in the dataset. I created a variable called Road_Type to hold this information.
+
+	If you take a look at Output 3-5 you see accidents on the surface streets (Streets) is more common than Highways. You’ll notice some difference when looking at just Road Type and number of accidents. In Los Angeles the number of Highway accidents similar to Surface Street accidents. Maim seems to have similar equal number of Highway accidents as Street accidents. The two cities that have the most accidents Houston and Charlotte have the highest number of accidents occur on the street rather than Highways. It almost seems disproportionate compared to the other cities at the number of accidents on surface streets compared to Highways. 
+
+```{r}
+#Add in Road_Type
+US_Accidents_Dataset_Final <- US_Accidents_Dataset_Final %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+
+#Plot for Road_Type
+ggplot(US_Accidents_Dataset_Final, aes(x=Start_Hour, fill=Road_Type)) + geom_bar(stat ='count') + 
+  labs(title='Start Hours of Accidents by Road Type', 
+       x='Start Hour', y = 'Count of Accidents')
+
+summ_road_typ <- dplyr::count(US_Accidents_Dataset_Final,City,Road_Type)
+
+#Check
+head(summ_road_typ)
+
+
+#Plot for Road_Type and City
+ggplot(summ_road_typ, aes(x=Road_Type, y=n, fill=City)) + geom_bar(stat='identity') + labs(title='Accidents by City and Road Type',x='Road Type',
+       y='Count of Accidents')
+       
+ggplot(summ_road_typ, aes(x=City, y=n, fill=City)) + geom_bar(stat='identity') + facet_wrap(~ Road_Type) + labs(title='Accidents by City Split by Road Type',x='City & Road Type', 
+y='Count of Accidents')
+
+```
+#Question 3 Do Traffic control like stop signs and traffic signal contribute to rate of accidents? 
+
+The next part of the analysis I wanted to know about traffic controls, more specifically traffic signals and stop signs and their contribution to number of accidents. This would focus the analysis on surface streets as there are not very many traffic lights on freeways. There are exceptions that I have seen in Tempe, Arizona and near Long Beach, California close to LAX airport. For this part of the research I was able to find a simpler way to create my graph without having to split out the data.  
+
+If you look at Output 6 you will notice the number of accidents associated to Traffic Signals. I took the data performed a select to isolated City and Traffic Signal variables. Perform a count on the TRUE and FALSE categorial Traffic Signal variable. This allowed me to plot the number of accidents related to Traffic Signal. Based on the data you can determine that the majority of accident that happen in Texas and North Carolina are related to Traffic Signals. The cities of Houston and Charlotte are the highest making Los Angeles and  Miami seem like incredibly lower on accident rate.
+
+Output 7 show the rate of accident related to Stop Signs. From this analysis Charlotte drops to third and Los Angeles takes its place. But Houston is still pretty far out in front. It makes you think that there are either very unfortunate driver in Houston or there is something else with the data. Having a contact for the data would probably help solve the issue.
+
+Below in Output 10 I wanted to show how each state shows up when compared to traffic signals to provide context. If you look at the data at state level California should be top in all the above analysis. In Output 10 you will notice California is followed by Texas and then Florida.  At a city level we see something very different. Without doing some further analysis it would be hard to determine what causes the state accidents rates verse city level accident rates to be very different. You will notice North Carolina is number five on the list and Georgia is even further down on the list yet the states respective cities lead in the number of accidents. 
+
+```{r}
+#Change the true and false as needed for Traffic_Signals
+US_Accidents_Dataset_Final$Traffic_Signal [US_Accidents_Dataset_Final$Traffic_Signal == "TRUE"] <- 1
+US_Accidents_Dataset_Final$Stop [US_Accidents_Dataset_Final$Stop == "TRUE"] <- 1
+US_Accidents_Dataset_Final$Roundabout [US_Accidents_Dataset_Final$Roundabout == "TRUE"] <- 1
+
+
+summ_traffic_sig<-dplyr::count(US_Accidents_Dataset_Final,City,Traffic_Signal)
+
+ggplot(summ_traffic_sig, aes(x=Traffic_Signal, y=n)) + geom_bar(stat='identity') + coord_flip()
+
+#By City Traffic Signal
+US_Accidents_Dataset_Final %>%
+    select(City, Traffic_Signal) %>%
+    filter(Traffic_Signal == 1) %>%
+    group_by(City) %>%
+    summarise(Total = n()) %>%
+    ggplot() +
+    geom_bar(aes(y = Total,
+                 x = reorder(City, Total, FUN = abs),
+                 fill = Total),
+             stat = 'identity') +
+    coord_flip() +
+    labs(title = 'Count of Accidents at Traffic Signals', x = 'City', y = 'Count') + theme(legend.position="none")
+
+#By City and Stop signs
+US_Accidents_Dataset_Final %>%
+    select(City, Stop) %>%
+    filter(Stop == 1) %>%
+    group_by(City) %>%
+    summarise(Total = n()) %>%
+    ggplot() +
+    geom_bar(aes(y = Total,
+                 x = reorder(City, Total, FUN = abs),
+                 fill = Total),
+             stat = 'identity') +
+    coord_flip() +
+    labs(title = 'Count of Accidents at Stop Signs', x = 'City', y = 'Count') + theme(legend.position="none")
+
+#Regression Model
+#Just TX and NC to see if there is a change
+TXNC <- dplyr::filter(US_Accidents_Dataset_Final, State == c("TX","NC")) 
+
+#Check
+TXNC
+
+#Regression model of all data
+RegModel.2 <- lm(Severity~Traffic_Signal+Stop, data=US_Accidents_Dataset_Final)
+summary(RegModel.2)
+
+#Plot of lm
+ggplot(US_Accidents_Dataset_Final, aes(x=Traffic_Signal, y=Severity))+
+geom_point() +
+geom_smooth(method="lm", se=F)+
+labs(title='Linear Regression Model of Traffic Signal to Severity of Accidents', x='Traffic Signals',
+y='Severity')
+    
+#All States
+US_Accidents_5yrs %>%
+    select(State) %>%
+    group_by(State) %>%
+    summarise(Total = n()) %>%
+    ggplot() +
+    geom_bar(aes(y = Total,
+                 x = reorder(State, Total, FUN = abs),
+                 fill = Total),
+             stat = 'identity') +
+    coord_flip() + labs(title = 'Count of Accidents by State', x = 'State', 
+    y = 'No. Accidents') +
+    theme(legend.position="none")
+
+```
+#Question 4: How do different points of interest contribute to the accident rate?
+
+My fourth question related to how the individual points of interest contributed to the higher accident rates. In the dataset points of interest or POI are considered to be things like roundabouts, junctions, and railway crossings. Since most of the accident happen in clear weather there has to be other factors causing the accident rates to be so high. I took the different traffic controls and changed them from true and false to 1 and zero (0) respectively to allow me to do a correlation matrix. Below are the results from the correlation matrix and a heatmap to provide visual of what is happening.
+
+Let me take a moment to explain this. The Severity variable is what really matters. Since you can’t have more than one traffic control in an accident as the leading cause of the accident. There will probably be other factors. In the heatmap if you look at Severity and match its with the Traffic Control you will see a high correlation with Junction. In this case a Junction is defined as a few different things like type of road crossing like a roundabout or yield sign.
+
+This show that Junction is also not a leading contributor of accidents. At least compared to when a Junction is not involved as indicated by the False side of the grid.
+```{r}
+
+q4<-dplyr::count(US_Accidents_Dataset_Final,City, Junction, Crossing)
+q4
+
+glimpse (US_Accidents_Dataset_Final)
+
+#Filter the data into new dataset
+q4_filtered_data <- US_Accidents_Dataset_Final[,c('Severity','Bump','Amenity','Crossing','Give_Way',
+'Junction','No_Exit','Roundabout')]
+
+#Conver the True/False to 1 and 0 for correlation
+q4_filtered_data$Bump [q4_filtered_data$Bump == "TRUE"] <- 1
+q4_filtered_data$Amenity [q4_filtered_data$Amenity == "TRUE"] <- 1
+q4_filtered_data$Crossing [q4_filtered_data$Crossing == "TRUE"] <- 1
+q4_filtered_data$Give_Way [q4_filtered_data$Give_Way == "TRUE"] <- 1
+q4_filtered_data$Junction [q4_filtered_data$Junction == "TRUE"] <- 1
+q4_filtered_data$No_Exit [q4_filtered_data$No_Exit == "TRUE"] <- 1
+q4_filtered_data$Roundabout [q4_filtered_data$Roundabout == "TRUE"] <- 1
+
+
+#Correlation
+q4_corr <- round(cor(q4_filtered_data, use = "complete.obs", method = "pearson"),2)
+
+#Check of data
+q4_corr
+
+#Heatmap to show correlation
+melted_q4_corr <- melt(q4_corr)
+
+head(melted_q4_corr)
+
+ggplot(data =melted_q4_corr, aes(x=Var1, y=Var2, fill=value)) + 
+geom_tile() + geom_text(aes(Var2, Var1, label = value), color = "white", size = 4) + labs(title='Correlation of differnt Traffic Controls',x=NULL, y=NULL)
+
+#New visual as bar between Severity and Junction
+q4_sj<-dplyr::count(US_Accidents_Dataset_Final,City, Severity,Junction)
+
+#Check Data
+q4_sj
+
+ggplot(q4_sj, aes(x=Severity, y=n, fill=City)) + geom_bar(stat='identity') + facet_wrap(~ Junction) +
+labs(title='Severity of Accident by Junction and City', y='Count')
+
+```
+#Question 5: What outside factors like weather contribute to accident rate?
+
+For my fifth question I wanted to know how weather condition effected accident rates? I use the already bucketed weather condition by the source data. Unlike the one I created for Road Types. The data is already made similar across all regions and it removes the doubt that there were not standards. Your normal assumption would be bad weather would cause more accidents, but according to the data that is not the case. Since highest volume of accidents happen in California and since it never rains in California the weather conditions are clear. The other weather conditions like Mostly Cloudy, Overcast and Partly Cloudy followed clear. Based on the data it is safe to say weather is not a driving factor of accidents.
+
+The below part was not part of my intended analysis nor part of my questions, but I felt compelled to provide as much context as possible. I performed a correlation matrix for some of available data related to weather. I wanted to see if any of them had a high correlation to the number of accidents. Below in Output 15 you see the correlation matrix. From that you can gather that most of the items have some correlation, but it is not that strong. The one that stands out Severity and Distance. In this case Severity is the impact on traffic not the severity of the accident itself. Distance is the length of the impact of the accident. In this correlation it would prove that these two are related which make perfect sense. If the Severity of the accident is high it would cause a larger effect on the traffic tie up. But notice how the different weather-related variable have little effect on Severity or Distance. In Output 16 I provided a heatmap to show the correlation visually.
+
+```{r}
+q5<-dplyr::count(US_Accidents_Dataset_Final,City, Severity, Weather_Condition)
+q5
+ggplot(q5, aes(x= n, y= Weather_Condition,fill=City)) + geom_bar(stat='identity') + 
+labs(title='Accident Rates by Weather Condition', x='Count of Accidents',y='Weather Condition')
+
+#Brought in data to get additional weather information
+names(US_Accidents_Dec2019_ALL)[names(US_Accidents_Dec2019_ALL) == "Visibility(mi)"] <- 
+"Visibility_Miles" 
+
+
+head(US_Accidents_Dec2019_ALL)
+
+#Build individual files to load into Final
+usaccfTX<- dplyr::filter(US_Accidents_Dec2019_ALL, State== "TX" & City== "Houston") 
+usaccfNC <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "NC" & City== "Charlotte")
+usaccfCA <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "CA" & City== "Los Angeles")
+usaccfGA <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "GA" & City== "Atlanta")
+usaccfFL <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "FL" & City== "Miami")
+
+usaccd<- rbind(usaccfTX, usaccfNC,usaccfCA, usaccfGA, usaccfFL)                                    
+
+nrow(usaccd)
+#nrow(usaccd)
+#[1] 295686
+
+glimpse(usaccd)
+
+names(usaccd)[names(usaccd) == "Distance(mi)"] <- "Distance"
+names(usaccd)[names(usaccd) == "Temperature(F)"] <- "Temperture"
+names(usaccd)[names(usaccd) == "Wind_Chill(F)"] <- "Wind_Chill"
+names(usaccd)[names(usaccd) == "Humidity(%)"] <- "Humidity"
+names(usaccd)[names(usaccd) == "Pressure(in)"] <-"Pressure_IN"
+names(usaccd)[names(usaccd) == "Wind_Speed(mph)"] <-"Wind_Speed_MPH"
+names(usaccd)[names(usaccd) == "Precipitation(in)"] <-"Precipitation_IN"
+
+usaccd_v1 <-usaccd
+glimpse(usaccd_v1)
+
+#filter using only the items of value
+usaccd_v2 <-usaccd_v1[,c('Severity','Distance','Temperture','Wind_Chill','Humidity','Pressure_IN','Visibility_Miles','Wind_Speed_MPH','Precipitation_IN')]
+
+
+usaccd_corr <-round(cor(usaccd_v2, use = "complete.obs", method = "pearson"),2)
+
+melted_usaccd_corr <- melt(usaccd_corr)
+
+head(melted_usaccd_corr)
+
+ggplot(data =melted_usaccd_corr, aes(x=Var1, y=Var2, fill=value)) + 
+geom_tile() + geom_text(aes(Var2, Var1, label = value), color = "white", size = 4)
+
+# Get lower triangle of the correlation matrix
+  get_lower_tri<-function(usaccd_corr){
+    usaccd_corr[upper.tri(usaccd_corr)] <- NA
+    return(usaccd_corr)
+  }
+  # Get upper triangle of the correlation matrix
+  get_upper_tri <- function(usaccd_corr){
+    usaccd_corr[lower.tri(usaccd_corr)]<- NA
+    return(usaccd_corr)
+  }
+  
+  upper_tri <- get_upper_tri(usaccd_corr)
+
+melted_usaccd_corr <- melt(upper_tri, na.rm = TRUE)
+
+
+# Heatmap
+ggplot(data = melted_usaccd_corr, aes(Var2, Var1, fill = value))+
+ geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+  theme_minimal()+ 
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed() + geom_text(aes(Var2, Var1, label = value), color = "black", size = 4) + 
+ labs(title='Heatmap of Correlation of Weather Data', x=NULL, y=NULL)
+
+```
+#Question 6: Predict the Severity of the accident.
+#Check the data
+glimpse(usaccd$State=="CA")
+
+For my final question using machine learning to predict severity levels of accidents. In an earlier assignment I thought I would be able to use kNN to perform my machine learning analysis. After further analysis of the data I believe the best machine learning algorithm would be logistic regression. Why I choose logistic regression. The data is categorical and discrete in that it is true or false not a lot of numerical data.
+The Severity variable which defines how bad or sever a backup or delay the accident caused has four categories. I reduce them to two Severity levels. The data contains four but Severity 1 and 4 are so small in number that they will be over shadowed by the most common, which are Severity 2 and Severity 3. It all kind of made sense to do a straight forward Logistic Regression model. The data is not a cluster type of data either. I think with the data being true or false the clustering would be pretty simple.
+ 
+	The method I followed base on reading some analysis and trying to understanding what I was trying to achieve as well. I wanted to understand if the severities of the traffic impacts could be predicted based off Traffic Signal, Junction, Side (which side the of the road way the accident happened occurred on) and Start Hour. I took these variables because they seemed to be ones to have the biggest impact on Severity. To get the data to a stage where I can perform the logistic regression on it. I removed a lot of 30 attributes that were in the original dataset. I was left with Severity, Traffic Signal, Junction, Side and Start Hour. I took the data and changed everything to a factor. Once that was accomplished I moved forward with splitting the data by state. This would allow me to compare each state on its own merit. Since each state have different traffic controls, rules and other factors. I still left the original cities and did not add additional data to the data set.
+
+	The accuracy of the logistic model is pretty low. I believe I needed additional time just to spend on this data and possibly having a contact who could have helped me better understand the data would have been great. For Houston, Texas the value was a mere 6.63%. I believe this requires more in-depth research as to the cause of such a low prediction rate. The North Carolina data I had a different issue. I was not able to get an expected accuracy percentage. This leads me to believe all those data points for Houston, Texas and Charlotte, North Carolina need some further cleaning or analysis to understanding what is going on with the source data.
+	
+Moving on to Los Angeles, CA I got a better expected accuracy of 65.3%. This is not very high meaning the model is just “ok” and you could probably predict at a better percentage without a model. Similar with Miami, FL I got an accuracy of 68.6%. The best I saw was from Atlanta, GA. The accuracy was 71.0%. Overall, the Logistic model is not great and given some more time I think I could find a better model to get better prediction of Severity of accidents.
+
+In the below output of the model the accuracy is pretty much all over the place. Logistic Regression was not the best choice as a predictor model at least not for this analysis. A lot of the variables do not correlate to severity of the accident. Meaning they don’t relate to the cause of the accidents.
+
+```{r}
+#Copy the data
+modelall <-usaccd
+
+#Full data set
+modelall
+
+#Clean the data
+modelall <- modelall %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+modelall$Start_Hour <- lubridate::hour(modelall$Start_Time)
+
+glipmse(modelall)
+modelall<-modelall %>%
+dplyr::select('Severity','Junction','Traffic_Signal','Weather_Condition','Side','Road_Type','Start_Hour','City','State')
+
+#Remove Weather_Condition as unable to get correct randomization
+modelall$Weather_Condition <-NULL
+#Make factors of dataset
+modelall$Side <- as.factor(modelall$Side)
+modelall$City <- as.factor(modelall$City)
+modelall$State <- as.factor(modelall$State)
+modelall$Junction <- as.factor(modelall$Junction)
+modelall$Traffic_Signal <- as.factor(modelall$Traffic_Signal)
+modelall$Severity <- as.factor(modelall$Severity)
+
+#Check data
+glimpse(modelall)
+str(modelall$State=='CA')
+
+#Leave as T/F
+#modelall$Traffic_Signal [modelall$Traffic_Signal == "TRUE"] <- 1
+#modelall$Junction [modelall$Junction == "TRUE"] <- 1
+
+#Split the data by state and city
+usacc_modelTX<- dplyr::filter(modelall, State== "TX" | Severity== c("2","3"))
+usacc_modelTX<- dplyr::filter(usacc_modelTX, Severity== c("2","3"))
+
+glimpse(usacc_modelTX$Severity)
+
+#Check
+glimpse(usacc_modelTX)
+
+#Remove City and state because we want to do this state by state for processing
+usacc_modelTX$State<- NULL
+usacc_modelTX$City<- NULL
+
+#Check
+glimpse(usacc_modelTX$Severity)
+
+#Split sample
+smp_siz = floor(0.70*nrow(usacc_modelTX))
+
+train_ind = sample(seq_len(nrow(usacc_modelTX)),size = smp_siz)
+
+trainTX = usacc_modelTX[train_ind,]
+testTX = usacc_modelTX[-train_ind,]
+
+#Different Trail
+trainall = modelall[train_indall,]
+testall = modelall[-train_indall,]
+
+#Check counts
+glimpse(trainTX) #32,379
+glimpse(testTX) #13,878
+
+#Different Trail
+glimpse(trainall)
+
+
+#Model 
+glmtrainTX<-glm(formula = as.factor(Severity) ~ Junction+Traffic_Signal+Side+Road_Type+Start_Hour,
+family = "binomial", data = trainTX)
+
+glmtrainTX
+
+summary(glmtrainTX)
+
+predsTX<-predict(glmtrainTX, newdata=testTX, type="response")
+
+
+confmatTX<- table(Actual=testTX$Severity,Predicted_Value=predsTX >0.5)
+
+#Checks
+nrow(testTX)
+length(trainTX)
+length(preds)
+length(trainTX)
+
+
+confmatTX
+#Accuracy
+(confmatTX[[1,1]] + confmatTX[[2,2]])/sum(confmatTX)
+
+#CA Model
+#Check data
+usaccfCA <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "CA" & City== "Los Angeles")
+
+glimpse(usaccfCA)
+
+#Severity 2 and 3
+#Step 1
+usacc_modelCA<- dplyr::filter(usaccfCA, between(Severity, 2, 3))
+
+#Step 2
+usacc_modelCA <- usacc_modelCA %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+#Step 3
+usacc_modelCA$Start_Hour <- lubridate::hour(usacc_modelCA$Start_Time)
+
+#Step 4
+usacc_modelCA<-usacc_modelCA %>%
+dplyr::select('Severity','Junction','Traffic_Signal','Side','Road_Type','Start_Hour')
+
+#Step 5
+usacc_modelCA$Side <- as.factor(usacc_modelCA$Side)
+usacc_modelCA$Junction <- as.factor(usacc_modelCA$Junction)
+usacc_modelCA$Traffic_Signal <- as.factor(usacc_modelCA$Traffic_Signal)
+usacc_modelCA$Severity <- as.factor(usacc_modelCA$Severity)
+
+#Check
+glimpse(usacc_modelCA)
+
+#Split sample
+smp_siz = floor(0.70*nrow(usacc_modelCA))
+
+train_ind = sample(seq_len(nrow(usacc_modelCA)),size = smp_siz)
+
+trainCA = usacc_modelCA[train_ind,]
+testCA = usacc_modelCA[-train_ind,]
+
+#Check counts and look double check data
+glimpse(trainCA) #45,710
+glimpse(testCA) #19,591
+#Total 65,301
+
+#Model 
+glmtrainCA<-glm(formula = as.factor(Severity) ~ Junction+Traffic_Signal+Side+Road_Type+Start_Hour,
+family = "binomial", data = trainCA)
+
+glmtrainCA
+
+summary(glmtrainCA)
+
+predsCA<-predict(glmtrainCA, newdata=testCA, type="response")
+
+
+confmatCA<- table(Actual=testCA$Severity,Predicted_Value=predsCA >0.5)
+
+confmatCA
+#Accuracy
+(confmatCA[[1,1]] + confmatCA[[2,2]])/sum(confmatCA)
+
+#NC Model
+#Check data
+usaccfNC <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "NC" & City== "Charlotte")
+
+glimpse(usaccfNC)
+
+#Severity 2 and 3
+#Step 1
+usacc_modelNC<- dplyr::filter(usaccfNC, between(Severity, 2, 3))
+
+#Step 2
+usacc_modelNC <- usacc_modelNC %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+#Step 3
+usacc_modelNC$Start_Hour <- lubridate::hour(usacc_modelNC$Start_Time)
+
+#Step 4
+usacc_modelNC<-usacc_modelNC %>%
+dplyr::select('Severity','Junction','Traffic_Signal','Side','Road_Type','Start_Hour')
+
+#Step 5
+usacc_modelNC$Side <- as.factor(usacc_modelNC$Side)
+usacc_modelNC$Junction <- as.factor(usacc_modelNC$Junction)
+usacc_modelNC$Traffic_Signal <- as.factor(usacc_modelNC$Traffic_Signal)
+usacc_modelNC$Severity <- as.factor(usacc_modelNC$Severity)
+
+#Check
+glimpse(usacc_modelNC)
+
+#Split sample
+smp_siz = floor(0.70*nrow(usacc_modelNC))
+
+train_ind = sample(seq_len(nrow(usacc_modelNC)),size = smp_siz)
+
+trainNC = usacc_modelNC[train_ind,]
+testNC = usacc_modelNC[-train_ind,]
+
+#Check counts and look double check data
+glimpse(trainNC) #47,424
+glimpse(testNC) #20,325
+#Total 67,749
+
+#Model 
+glmtrainNC<-glm(formula = as.factor(Severity) ~ Junction+Traffic_Signal+Side+Road_Type+Start_Hour,
+family = "binomial", data = trainNC)
+
+summary(glmtrainNC)
+
+predsNC<-predict(glmtrainNC, newdata=testNC, type="response")
+
+confmatNC<- table(Actual=testNC$Severity,Predicted_Value=predsNC >0.5)
+
+confmatNC
+#Accuracy
+(confmatNC[[1,1]] + confmatNC[[1,1]])/sum(confmatNC)
+
+#GA Model
+#Check data
+usaccfGA <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "GA" & City== "Atlanta")
+
+glimpse(usaccfGA)
+
+#Severity 2 and 3
+#Step 1
+usacc_modelGA<- dplyr::filter(usaccfGA, between(Severity, 2, 3))
+
+#Step 2
+usacc_modelGA <- usacc_modelGA %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+#Step 3
+usacc_modelGA$Start_Hour <- lubridate::hour(usacc_modelGA$Start_Time)
+
+#Step 4
+usacc_modelGA<-usacc_modelGA %>%
+dplyr::select('Severity','Junction','Traffic_Signal','Side','Road_Type','Start_Hour')
+
+#Step 5
+usacc_modelGA$Side <- as.factor(usacc_modelGA$Side)
+usacc_modelGA$Junction <- as.factor(usacc_modelGA$Junction)
+usacc_modelGA$Traffic_Signal <- as.factor(usacc_modelGA$Traffic_Signal)
+usacc_modelGA$Severity <- as.factor(usacc_modelGA$Severity)
+
+#Check
+glimpse(usacc_modelGA)
+
+#Split sample
+smp_siz = floor(0.70*nrow(usacc_modelGA))
+
+train_ind = sample(seq_len(nrow(usacc_modelGA)),size = smp_siz)
+
+trainGA = usacc_modelGA[train_ind,]
+testGA = usacc_modelGA[-train_ind,]
+
+#Check counts and look double check data
+glimpse(trainGA) #25,330
+glimpse(testGA) #10,857
+#Total 36,187
+
+#Model 
+glmtrainGA<-glm(formula = as.factor(Severity) ~ Junction+Traffic_Signal+Side+Road_Type+Start_Hour,
+family = "binomial", data = trainGA)
+
+summary(glmtrainGA)
+
+predsGA<-predict(glmtrainGA, newdata=testGA, type="response")
+
+confmatGA<- table(Actual=testGA$Severity,Predicted_Value=predsGA >0.5)
+
+confmatGA
+#Accuracy
+(confmatGA[[1,1]] + confmatGA[[2,2]])/sum(confmatGA)
+
+#FL Model
+#Check data
+usaccfFL <- dplyr::filter(US_Accidents_Dec2019_ALL, State== "FL" & City== "Miami")
+
+glimpse(usaccfFL)
+
+#Severity 2 and 3
+#Step 1
+usacc_modelFL<- dplyr::filter(usaccfFL, between(Severity, 2, 3))
+
+#Step 2
+usacc_modelFL <- usacc_modelFL %>% mutate(Road_Type = case_when(
+  str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Highway",
+  !str_detect(Street, "Fwy|Expy|Highway|US-|I-") ~ "Street")) %>% 
+  mutate(Road_Type = as.factor(Road_Type)) 
+
+#Step 3
+usacc_modelFL$Start_Hour <- lubridate::hour(usacc_modelFL$Start_Time)
+
+#Step 4
+usacc_modelFL<-usacc_modelFL %>%
+dplyr::select('Severity','Junction','Traffic_Signal','Side','Road_Type','Start_Hour')
+
+#Step 5
+usacc_modelFL$Side <- as.factor(usacc_modelFL$Side)
+usacc_modelFL$Junction <- as.factor(usacc_modelFL$Junction)
+usacc_modelFL$Traffic_Signal <- as.factor(usacc_modelFL$Traffic_Signal)
+usacc_modelFL$Severity <- as.factor(usacc_modelFL$Severity)
+
+#Check
+glimpse(usacc_modelFL)
+
+#Split sample
+smp_siz = floor(0.70*nrow(usacc_modelFL))
+
+train_ind = sample(seq_len(nrow(usacc_modelFL)),size = smp_siz)
+
+trainFL = usacc_modelFL[train_ind,]
+testFL = usacc_modelFL[-train_ind,]
+
+#Check counts and look double check data
+glimpse(trainFL) #20,727
+glimpse(testFL) #8,883
+#Total 29,610
+
+#Model 
+glmtrainFL<-glm(formula = as.factor(Severity) ~ Junction+Traffic_Signal+Side+Road_Type+Start_Hour,
+family = "binomial", data = trainFL)
+
+summary(glmtrainFL)
+
+predsFL<-predict(glmtrainFL, newdata=testFL, type="response")
+
+confmatFL<- table(Actual=testFL$Severity,Predicted_Value=predsFL >0.5)
+
+confmatFL
+#Accuracy
+(confmatFL[[1,1]] + confmatFL[[2,2]])/sum(confmatFL)
+```
+Conclusion:
+	I believe the data contained a lot of good information about rates of accidents some of the contributing factors to the accidents. Some of the insight I found from the analysis is definitely prime hours for accidents like between 8AM to 9AM block and then again the 4PM to 5PM block. The morning seems to have more accidents than in the evening block. You could use the data to avoid those times or make the case to your boss to come in earlier and leave earlier before peak accident hour starts.  I also found out weather is not a big contributor to accident rates as majority of accidents occurred on clear days. Surface street have the largest amount of accidents, which I thought was due to traffic controls like Traffic Signal or Stop signs. There is no correlation between those and the severity of the impact to traffic. There is a very definitive regional fact to the data. While I assumed you could compare accidents across the entire United States I believe region naming and reporting causes issue with that analysis. In other words, everything is not the same. Which does make reporting a little more difficult.
+	
+I believe if compared on a state or city by city bases this information would provide value to cities that neighbor each other. I think City Planner and Civil Engineers who design our cities could find some insight from this data. It might help them pin point regional issues that can be resolved with minor changes like intersection or junctions or new different types of signage.
+
+I do believe the data is lacking some information. If we had more biographical data like driver sex, age, number years of driving, last drivers test, how long they have lived in the area, type of car they are driving, speed limits, speed of vehicles involved in the accident, number of vehicles involved, technology usage and some other information the analysis could pinpoint possible reasons for rising accident rates. Future analysis should look closer as biographical data and maybe try to standardize information into smaller buckets. The one example would be weather. There are a lot of buckets for weather maybe narrow that down to five to ten.
+
